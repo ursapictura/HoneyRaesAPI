@@ -8,6 +8,7 @@
 
 using HoneyRaesAPI.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Win32.SafeHandles;
 List<Customer> customers = new List<Customer> {
     new Customer { 
         Id = 1,
@@ -56,7 +57,7 @@ List<ServiceTicket> serviceTickets = new List<ServiceTicket> {
         EmployeeId = 1,
         Description = "Return broken items",
         Emergency = false,
-        DateCompleted = DateTime.Now,
+        DateCompleted = new DateTime(2024, 05, 20),
     }, 
 
     new ServiceTicket { 
@@ -70,7 +71,7 @@ List<ServiceTicket> serviceTickets = new List<ServiceTicket> {
     new ServiceTicket {
         Id = 4,
         CustomerId = 1,
-        EmployeeId = 2,
+        EmployeeId = 1,
         Description = "New charges to dispute. Suspects fraud",
         Emergency = true,
     },
@@ -78,9 +79,10 @@ List<ServiceTicket> serviceTickets = new List<ServiceTicket> {
     new ServiceTicket {
         Id = 5,
         CustomerId = 2,
+        EmployeeId = 2,
         Description = "Wants broken items back",
         Emergency = false,
-        DateCompleted = new DateTime(2024, 07, 20),
+        DateCompleted = new DateTime(2023, 07, 20),
     }
 
 
@@ -121,6 +123,29 @@ app.MapGet("/servicetickets/{id}", (int id) =>
     serviceTicket.Employee = employees.FirstOrDefault(e => e.Id == serviceTicket.EmployeeId);
     serviceTicket.Customer = customers.FirstOrDefault(c => c.Id == serviceTicket.CustomerId);
     return Results.Ok(serviceTicket);
+});
+
+app.MapGet("/servicetickets/emergency", () =>
+{
+   return serviceTickets.Where(st => st.Emergency).Where(st => st.DateCompleted == null); 
+});
+
+app.MapGet("/servicetickets/unassigned", () => 
+{
+    return serviceTickets.Where(st => st.EmployeeId == null);
+});
+
+app.MapGet("/servicetickets/completed", () => 
+{
+    return serviceTickets.Where(st => st.DateCompleted != null)
+                         .OrderBy(st => st.DateCompleted);
+});
+
+app.MapGet("/sevicetickets/priority", () => 
+{
+    return serviceTickets.Where(st => st.DateCompleted == null)
+                        .OrderByDescending(st => st.Emergency)
+                        .ThenByDescending(st => st.EmployeeId);
 });
 
 app.MapPost("/servicetickets", (ServiceTicket serviceTicket) =>
@@ -185,6 +210,56 @@ app.MapGet("/employees/{id}", (int id) =>
 
 });
 
+app.MapGet("/employees/available", () => 
+{
+    var incompleteTickets = serviceTickets
+                            .Where(st => st.DateCompleted == null)
+                            .Select(st => st.EmployeeId)
+                            .Distinct()
+                            .ToList();
+
+    return employees.Where(e => !incompleteTickets.Contains(e.Id));
+});
+
+app.MapGet("/employees/{id}/customers", (int id) =>
+{
+    var employee = employees.FirstOrDefault(e => e.Id == id);
+        if (employee == null)
+    {
+        return Results.NotFound();
+    }
+    var employeeTickets = serviceTickets
+                        .Where(st => st.EmployeeId == id)
+                        .Select(st => st.CustomerId)
+                        .Distinct()
+                        .ToList();
+    var employeeCustomers = customers.Where(c => employeeTickets.Contains(c.Id));
+    return Results.Ok(employeeCustomers);
+});
+
+app.MapGet("/employees/ofthemonth", () => 
+{
+    var ticketsCompletedInMonth = serviceTickets.Where(st => st.DateCompleted >= DateTime.Now.AddMonths(-1) && st.EmployeeId != null);
+
+    if (ticketsCompletedInMonth.Count() <= 0)
+    {
+        return Results.NotFound();
+    }
+
+    var employeeTickets = ticketsCompletedInMonth
+                            .GroupBy(t => t.EmployeeId)
+                            .Select(group => new
+                            {
+                                EmployeeId = group.Key,
+                                TicketCount = group.Count()
+                            })
+                            .OrderByDescending(e => e.TicketCount)
+                            .FirstOrDefault();
+    
+    var employeeOfTheMonth = employees.FirstOrDefault(e => e.Id == employeeTickets.EmployeeId);
+    return Results.Ok(employeeOfTheMonth);
+});
+
 app.MapGet("/customers", () => 
 {
     return customers;
@@ -202,9 +277,15 @@ app.MapGet("/customers/{id}", (int id) =>
     return Results.Ok(customer);
 });
 
-app.Run();
-
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+app.MapGet("/customers/inactive", () => 
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+ var recentCompleteTickets = serviceTickets
+                            .Where(st => st.DateCompleted >= DateTime.Now.AddYears(-1))
+                            .Select(st => st.CustomerId)
+                            .Distinct()
+                            .ToList();
+
+ return customers.Where(c => !recentCompleteTickets.Contains(c.Id));
+});
+
+app.Run();
