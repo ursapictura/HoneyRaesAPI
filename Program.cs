@@ -9,6 +9,8 @@
 using HoneyRaesAPI.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Win32.SafeHandles;
+using System.Text.Json.Serialization;
+
 List<Customer> customers = new List<Customer> {
     new Customer { 
         Id = 1,
@@ -95,6 +97,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options => options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
 
 var app = builder.Build();
 
